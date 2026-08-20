@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Agent",
+      "program": "${workspaceFolder}/index.ts",
+      "args": ["${input:cwd}", "${input:prompt}"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "runtimeArgs": ["--enable-source-maps"],
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "cwd",
+      "type": "promptString",
+      "description": "Working directory (same as: node index.ts <cwd> ...)",
+      "default": "."
+    },
+    {
+      "id": "prompt",
+      "type": "promptString",
+      "description": "Agent prompt",
+      "default": "Read the tsconfig.json"
+    }
+  ]
+}
