@@ -3,9 +3,10 @@ import { z } from "zod";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execSync } from "node:child_process";
-import { exitCode } from "node:process";
 
 const cwd = resolve(process.argv[2] || process.cwd());
+
+const APPROVED_COMMANDS: Set<string> = new Set();
 
 const SAFE_PREFIXES = [
   "ls",
@@ -26,10 +27,30 @@ interface BashOperations {
   exec: (cmd: string) => Promise<{ stdout: string; exitCode: number }>;
 }
 
-function createBashTool(operations: BashOperations, safePrefixes: string[]) {
-  function isSafe(command: string): boolean {
-    return safePrefixes.some((p) => command.trim().startsWith(p));
-  }
+type ApprovalConfig =
+  | { mode: "interactive" }
+  | { mode: "background" }
+  | { mode: "delegated"; trust: string[] };
+
+function createApproval(config: ApprovalConfig) {
+  return ({ command }: { command: string }) => {
+    if (config.mode === "background") return false;
+
+    if (config.mode === "delegated") {
+      return !config.trust.some((p) => command.trim().startsWith(p));
+    }
+
+    return (
+      !SAFE_PREFIXES.some((p) => command.trim().startsWith(p)) &&
+      !APPROVED_COMMANDS.has(command.trim())
+    );
+  };
+}
+
+function createBashTool(
+  operations: BashOperations,
+  approvalFn: ReturnType<typeof createApproval>,
+) {
   return tool({
     description: `Execute a shell command in the working directory.
  
@@ -47,7 +68,7 @@ USAGE: command is a single shell string. Commands not in the safe-prefix
       command: z.string().describe("Shell command to execute"),
     }),
     execute: async ({ command }) => {
-      if (!isSafe(command)) {
+      if (approvalFn({ command })) {
         return `Blocked: "${command}" requires approval.`;
       }
       const { stdout } = await operations.exec(command);
@@ -74,7 +95,39 @@ const localOps: BashOperations = {
   },
 };
 
-const bash = createBashTool(localOps, SAFE_PREFIXES);
+// Interactive: human approves anything not on the safe list
+const bash = createBashTool(localOps, createApproval({ mode: "interactive" }));
+
+// // Background: auto-approve everything (CI, automation)
+// const bash = createBashTool(localOps, createApproval({ mode: "background" }));
+
+// // Delegated: subagent inherits a trust slice from its parent
+// const bash = createBashTool(
+//   localOps,
+//   createApproval({ mode: "delegated", trust: ["pwd", "find .", "git status"] }),
+// );
+
+const approveCommand = tool({
+  description: `Approve a previously blocked bash command so it can run.
+
+WHEN TO USE: bash returned "Blocked: ... requires approval." Call this
+  immediately with that same command string, then call bash again.
+
+WHEN NOT TO USE: the command already ran. The command is still untried.
+  You want to skip the command.
+
+DO NOT USE FOR: executing commands (use bash), searching code (use grep),
+  reading files (use read). Do not ask the user in text; call this tool.
+
+USAGE: pass the exact blocked command. After this tool returns, retry
+  bash with the same command. Never print "yes | no" or wait for a reply.`,
+  inputSchema: z.object({
+    command: z.string().describe("the blocked comamnd to approve"),
+  }),
+  execute: ({ command }) => {
+    APPROVED_COMMANDS.add(command);
+  },
+});
 
 const read = tool({
   description: `Read a file from the project. Returns numbered lines.
@@ -179,7 +232,7 @@ EXAMPLES:
 const agent = new ToolLoopAgent({
   model: "anthropic/claude-haiku-4-5",
   instructions: `You are a coding agent.\nWorking directory: ${cwd}`,
-  tools: { read, grep, bash },
+  tools: { read, grep, bash, approveCommand },
   stopWhen: stepCountIs(10),
 });
 
