@@ -1,11 +1,16 @@
 import { ToolLoopAgent, stepCountIs, tool } from "ai";
 import { z } from "zod";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
 import { buildSystemPrompt } from "./system.js";
 
-const workingDir = resolve(process.argv[2] || process.cwd());
+const cwd = resolve(process.argv[2] || process.cwd());
+
+const agentsPath = join(cwd, "AGENTS.md");
+const projectContext = existsSync(agentsPath)
+  ? readFileSync(agentsPath, "utf-8")
+  : undefined;
 
 const SAFE_PREFIXES = [
   "ls",
@@ -77,7 +82,7 @@ const localOps: BashOperations = {
   exec: async (command) => {
     try {
       const stdout = execSync(command, {
-        cwd: workingDir,
+        cwd: cwd,
         encoding: "utf-8",
         timeout: 30_000,
       });
@@ -123,7 +128,7 @@ USAGE: path is relative to working directory. offset and limit are optional.
     limit: z.number().optional().describe("Max lines to return"),
   }),
   execute: async ({ path: filePath, offset, limit }) => {
-    const abs = resolve(workingDir, filePath);
+    const abs = resolve(cwd, filePath);
     const content = readFileSync(abs, "utf-8");
     let lines = content.split("\n");
 
@@ -169,7 +174,7 @@ EXAMPLES:
     glob: z.string().optional().describe("File glob filter, e.g. '*.ts'"),
   }),
   execute: async ({ pattern, path: searchPath, glob: globFilter }) => {
-    const dir = resolve(workingDir, searchPath || ".");
+    const dir = resolve(cwd, searchPath || ".");
     const escapedPattern = pattern.replace(/'/g, `'\\''`);
     const escapedGlob = (globFilter || "*").replace(/'/g, `'\\''`);
     const cmd = `grep -rn --exclude-dir=node_modules --exclude-dir=.git --include='${escapedGlob}' -E '${escapedPattern}' '${dir}' 2>/dev/null`;
@@ -203,9 +208,10 @@ EXAMPLES:
   },
 });
 const instructions = buildSystemPrompt({
-  workingDirectory: workingDir,
+  workingDirectory: cwd,
   toolNames: Object.keys({ read, grep, bash }),
   sandboxType: "local",
+  projectContext,
 });
 
 const agent = new ToolLoopAgent({
