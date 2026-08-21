@@ -5,9 +5,7 @@ import { resolve } from "node:path";
 import { execSync } from "node:child_process";
 import { buildSystemPrompt } from "./system.js";
 
-const cwd = resolve(process.argv[2] || process.cwd());
-
-const APPROVED_COMMANDS: Set<string> = new Set();
+const workingDir = resolve(process.argv[2] || process.cwd());
 
 const SAFE_PREFIXES = [
   "ls",
@@ -41,10 +39,7 @@ function createApproval(config: ApprovalConfig) {
       return !config.trust.some((p) => command.trim().startsWith(p));
     }
 
-    return (
-      !SAFE_PREFIXES.some((p) => command.trim().startsWith(p)) &&
-      !APPROVED_COMMANDS.has(command.trim())
-    );
+    return !SAFE_PREFIXES.some((p) => command.trim().startsWith(p));
   };
 }
 
@@ -82,7 +77,7 @@ const localOps: BashOperations = {
   exec: async (command) => {
     try {
       const stdout = execSync(command, {
-        cwd,
+        cwd: workingDir,
         encoding: "utf-8",
         timeout: 30_000,
       });
@@ -108,28 +103,6 @@ const bash = createBashTool(localOps, createApproval({ mode: "interactive" }));
 //   createApproval({ mode: "delegated", trust: ["pwd", "find .", "git status"] }),
 // );
 
-const approveCommand = tool({
-  description: `Approve a previously blocked bash command so it can run.
-
-WHEN TO USE: bash returned "Blocked: ... requires approval." Call this
-  immediately with that same command string, then call bash again.
-
-WHEN NOT TO USE: the command already ran. The command is still untried.
-  You want to skip the command.
-
-DO NOT USE FOR: executing commands (use bash), searching code (use grep),
-  reading files (use read). Do not ask the user in text; call this tool.
-
-USAGE: pass the exact blocked command. After this tool returns, retry
-  bash with the same command. Never print "yes | no" or wait for a reply.`,
-  inputSchema: z.object({
-    command: z.string().describe("the blocked comamnd to approve"),
-  }),
-  execute: ({ command }) => {
-    APPROVED_COMMANDS.add(command);
-  },
-});
-
 const read = tool({
   description: `Read a file from the project. Returns numbered lines.
  
@@ -150,7 +123,7 @@ USAGE: path is relative to working directory. offset and limit are optional.
     limit: z.number().optional().describe("Max lines to return"),
   }),
   execute: async ({ path: filePath, offset, limit }) => {
-    const abs = resolve(cwd, filePath);
+    const abs = resolve(workingDir, filePath);
     const content = readFileSync(abs, "utf-8");
     let lines = content.split("\n");
 
@@ -196,7 +169,7 @@ EXAMPLES:
     glob: z.string().optional().describe("File glob filter, e.g. '*.ts'"),
   }),
   execute: async ({ pattern, path: searchPath, glob: globFilter }) => {
-    const dir = resolve(cwd, searchPath || ".");
+    const dir = resolve(workingDir, searchPath || ".");
     const escapedPattern = pattern.replace(/'/g, `'\\''`);
     const escapedGlob = (globFilter || "*").replace(/'/g, `'\\''`);
     const cmd = `grep -rn --exclude-dir=node_modules --exclude-dir=.git --include='${escapedGlob}' -E '${escapedPattern}' '${dir}' 2>/dev/null`;
@@ -230,7 +203,7 @@ EXAMPLES:
   },
 });
 const instructions = buildSystemPrompt({
-  workingDirectory: cwd,
+  workingDirectory: workingDir,
   toolNames: Object.keys({ read, grep, bash }),
   sandboxType: "local",
 });
@@ -238,7 +211,7 @@ const instructions = buildSystemPrompt({
 const agent = new ToolLoopAgent({
   model: "anthropic/claude-haiku-4-5",
   instructions,
-  tools: { read, grep, bash, approveCommand },
+  tools: { read, grep, bash },
   stopWhen: stepCountIs(10),
 });
 
