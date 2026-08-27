@@ -15,7 +15,9 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "sourceMap": true,
-    "declaration": false
+    "declaration": false,
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["index.ts", "lib.ts", "system.ts", "test.ts", "sandbox-local.ts"]
 }

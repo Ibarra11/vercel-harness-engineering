@@ -3,9 +3,11 @@ import { z } from "zod";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { buildSystemPrompt } from "./system.js";
-import type { Sandbox } from "./sandbox.ts";
-import { createLocalSandbox } from "./sandbox-local.js";
-import { createJustBashSandbox } from "./sandbox-just-bash.js";
+import {
+  createSandboxByEnv,
+  SandboxLifecycle,
+  type Sandbox,
+} from "./sandbox.ts";
 
 const cwd = resolve(process.argv[2] || process.cwd());
 
@@ -189,11 +191,11 @@ EXAMPLES:
   });
 };
 
-const sandboxType = process.env.SANDBOX || "local";
-const sandbox =
-  sandboxType === "just-bash"
-    ? await createJustBashSandbox(cwd)
-    : createLocalSandbox(cwd);
+const sandbox = await createSandboxByEnv(cwd);
+
+const lifecycle: SandboxLifecycle = {};
+
+await lifecycle.afterStart?.(sandbox);
 
 console.error(`Sandbox: ${sandbox.type}`);
 
