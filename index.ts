@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { buildSystemPrompt } from "./system.js";
 import type { Sandbox } from "./sandbox.ts";
 import { createLocalSandbox } from "./sandbox-local.js";
+import { createJustBashSandbox } from "./sandbox-just-bash.js";
 
 const cwd = resolve(process.argv[2] || process.cwd());
 
@@ -153,7 +154,7 @@ EXAMPLES:
       glob: z.string().optional().describe("File glob filter, e.g. '*.ts'"),
     }),
     execute: async ({ pattern, path: searchPath, glob: globFilter }) => {
-      const dir = resolve(cwd, searchPath || ".");
+      const dir = resolve(sandbox.workingDirectory, searchPath || ".");
       const escapedPattern = pattern.replace(/'/g, `'\\''`);
       const escapedGlob = (globFilter || "*").replace(/'/g, `'\\''`);
       const cmd = `grep -rn --exclude-dir=node_modules --exclude-dir=.git --include='${escapedGlob}' -E '${escapedPattern}' '${dir}' 2>/dev/null`;
@@ -188,7 +189,12 @@ EXAMPLES:
   });
 };
 
-const sandbox = createLocalSandbox(cwd);
+const sandboxType = process.env.SANDBOX || "local";
+const sandbox =
+  sandboxType === "just-bash"
+    ? await createJustBashSandbox(cwd)
+    : createLocalSandbox(cwd);
+
 console.error(`Sandbox: ${sandbox.type}`);
 
 const tools = {

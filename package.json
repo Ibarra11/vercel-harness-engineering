@@ -13,6 +13,7 @@
   "dependencies": {
     "ai": "^7.0.70",
     "dotenv": "^17.4.2",
+    "just-bash": "^3.4.2",
     "typescript": "^7.0.2"
   },
   "devDependencies": {
